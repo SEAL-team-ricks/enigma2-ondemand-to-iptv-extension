@@ -1,0 +1,14 @@
+###############################################
+##Set here any settings before running##
+##Ensure you set a unique cron key, otherwise 
+#anyone can call your cron functions
+###############################################
+
+[settings]
+httpdport: 80
+odPath: /opt/ondemand/
+tmpPath: /opt/ondemand/tmp/
+logFile: /opt/ondemand/log
+dbFile: /opt/ondemand/db/db.json
+blackListFile: /opt/ondemand/blacklist
+cronUniqueKey: uniquenumberforcronhere
