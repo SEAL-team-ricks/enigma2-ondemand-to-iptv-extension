@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from classes.tinydb import TinyDB, Query
+from SocketServer     import ThreadingMixIn
 
 import urlparse
 import datetime
@@ -26,7 +27,7 @@ class onDemand():
 
 	def runWeb(self,od):
 		port=80
-		server_class=HTTPServer
+		server_class=self.ThreadedHTTPServer
     		server_address = ('', port)
     		httpd = server_class(server_address, self.www)
     		print 'Starting ondemand httpd...'
@@ -37,6 +38,54 @@ class onDemand():
                      now = str(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                      logfile.write(str(now) + ":" + str(logln) + "\n")
 
+	def listModules(self):
+		print "bla"
+
+	def getModuleInfo(self,module):
+		mod = importlib.import_module('modules.'+module)
+                odmClass = getattr(mod,'odmodule')
+                odm = odmClass(self.od)
+                info = odm.moduleInfo()
+                return info
+
+
+	def getModuleTitle(self,module):
+		mod = importlib.import_module('modules.'+module)
+                odmClass = getattr(mod,'odmodule')
+                odm = odmClass(self.od)
+                title = odm.moduleTitle
+		return title
+
+	def generateIndex(self,od,module):
+		db = od.dbWriter(od)
+		results = db.getIndex(module)
+		line=""
+		for result in results:
+			if result['id'] is not None:
+				line=line+result['id']+'\n'
+
+		settings = od.appSettings()
+
+		with open(settings.indexPath+module+".index","w") as index:
+			index.write(line)
+
+        def getModules(self):
+
+		s = self.appSettings()
+
+		modules={}
+
+                ##Loops all Available Modules.
+                for filename in os.listdir("./modules"):
+                    if filename.endswith(self.module + ".py") and "init" not in filename:
+                    	p, m = filename.rsplit('.', 1)
+			print m
+			
+
+			
+
+
+	
 	##DB Writer Class
 	class dbWriter():
 
@@ -49,78 +98,88 @@ class onDemand():
 			self.db.purge()
 			self.db.all()
 
-		#Does this entry have a URL stream
-		def hasStreamURL(self,id):
-		        
+
+		##Find a show for a module matching an ID
+		def getByID(self,id,module):
+			
 			rows = Query()
-                        results = self.db.search((rows.id == id ) & (rows.url == "None"))
-			if results:
-				print "Missing streaming URL"
-				return False
-			else:
-
-				return True
-
-                #Does this entry have a URL stream
-                def hasMeta(self,id):
-
-                        rows = Query()
-                        results = self.db.search((rows.id == id ) & (rows.description == "None"))
+                        results = self.db.search((rows.id == id) & (rows.module == module) )
                         if results:
-                                print "Missing Meta"
-                                return False
+				return results
                         else:
 
-                                return True
+                                return None
 
 
-		#If Row does not excist, create, if it does check the index is still the same and otherwise update
-		def insertRow(self,id,channel,title,module,url,expires,thumbnail_url,description,index):
-
-			print "Processing " + title.replace("  ","")
-
+		#If Row does not excist, create, if it does update
+		def insertUpdateRow(self,id,channel,title,module,url,expires,thumbnail,description):
 			rows = Query()
 			results = self.db.search(rows.id == id)
 			if not results:
-				self.db.insert({'id': id, 'channel': channel, 'title': title, 'module': module, 'url': 'None', 'expires': 'None', 'thumbnail': 'None', 'description': 'None', 'index': index })
-				print "Inserted new Record"
+				self.db.insert({'id': id, 'channel': channel, 'title': title, 'module': module, 'url': url, 'expires': expires, 'thumbnail': thumbnail, 'description': description })
 			else:
 
-				results = self.db.search((rows.id == id) & (rows.index == index))
-	
-				if not results:
-					print "Index Updated"
-					self.db.update({'index': index}, (rows.id == id) & (rows.index == index))
-				else:
+				self.db.update({'description': description, 'thubmnail': thumbnail, 'url': url, 'expires': expires, 'title': title, 'channel': channel},(rows.id == id) & (rows.module == module))
 
-					print "Skipped Record"
-
-		def updateStreamingURL(self,id,url,expires):
-			rows = Query()
-			self.db.update({'url': url, 'expires': expires},rows.id == id)	
-			print "Added Streaming URL"		
-
-                def updateMeta(self,id,description,thumbnail):
+		def getIndex(self,module):
                         rows = Query()
-                        self.db.update({'description': description, 'thubmnail': thumbnail},rows.id == id)
-                        print "Updated Meta"
+                        results = self.db.search(rows.module == module)
+                        return results
 
 		def getListings(self,module):
+			
 			rows = Query()
-			results = self.db.search((rows.module == module) & (rows.url != "None" ) & (rows.url != "!"))
+			results = self.db.search((rows.module == module) & (rows.url != "None" ) & (rows.url != "!") & (rows.title != "None") & (rows.url != ""))
 			return results
-
-		##Update the URL and the Expires using the Module and ID
-        	def updateRowByID(self,module,id,url,expires):
-			rows = Query()
-        	        #self.db.update({'channel': channel, 'title': title, 'url': url, 'expires', expires },rows.id == id AND rows.module == module)
 
         	def deleteRowByID(self,module,id):
         	        rows = Query()
         	        #self.db.remove(rows.id == id AND rows.module == module)
 
+	##########################################################################
+        ##Class for a show / stream
+        ##########################################################################
+	
+	class show():
 
-	##Class for Holding any settings
+		def __init__(self,od):
+
+			self.od = od
+			self.id = None
+			self.title = None
+			self.url = None
+			self.expires = None
+			self.thumbnail = None
+			self.description = None
+			self.channel = None
+			self.module = None
+
+		def load(self,id,module):
+
+			db = self.od.dbWriter(od)
+
+			foundShow = db.getByID(id,module)
+
+			if foundShow is not None:
+				self.id = foundShow[0]['id']
+				self.title = foundShow[0]['title']
+				self.url = foundShow[0]['url']
+				self.expires = foundShow[0]['expires']
+				self.thumbnail = foundShow[0]['thumbnail']
+				self.description = foundShow[0]['description']
+				self.channel = foundShow[0]['channel']
+				self.module = foundShow[0]['module']
+
+		def updateCreate(self):
+
+			db = self.od.dbWriter(od)
+			db.insertUpdateRow(self.id,self.channel,self.title,self.module,self.url,self.expires,self.thumbnail,self.description)				
+			
+
+	##########################################################################
+	##Class for Holding any App Settings
+        ##########################################################################
+
 	class appSettings():
 
 
@@ -136,6 +195,7 @@ class onDemand():
 			self.logFile = config.get('settings','logFile')
 			self.dbPath = config.get('settings','dbFile')
 			self.cronKey = config.get('settings','cronUniqueKey')
+			self.indexPath = config.get('settings','indexPath')
 
 	##Class which runs all other modules, once started auto run will loop every X seconds
 	class autorun():
@@ -157,7 +217,15 @@ class onDemand():
                 			mod = importlib.import_module('modules.'+p)
                 			odmClass = getattr(mod,'odmodule')
                 			odm = odmClass(self.od)
+
+					#Index file used to create a quick list of ID's for this module
+					if os.path.isfile(s.indexPath+p+'.index'):
+		                                os.remove(s.indexPath+p+'.index')
+					self.od.generateIndex(self.od,p)
 					odm.autorun()
+
+	class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    		pass
 
 	##Class which runs webserver and handles http requests for bouquets, epg and picons
 	class www(BaseHTTPRequestHandler):
@@ -215,7 +283,7 @@ class onDemand():
 			try:
                                 self.thisCronKey = self.path.split("/")[3]
 			except IndexError:
-                                self.thisAction = "none"
+                                self.thisCronKey = "none"
 
 
 			#Log Action
@@ -233,24 +301,43 @@ class onDemand():
 
 			if self.thisAction == "bouquet":
 				bouquet = od.bouquet(self.thisModule)
-				self.wfile.write(bouquet.generateBouquet(self.thisModule))
-				return
+				self._set_headers()
+				filters = self.getParamsAsDict(self.path)
+				self.wfile.write(bouquet.generateBouquet(self.thisModule,filters))
 			
-			if self.thisAction == "epg":
+			elif self.thisAction == "epg":
 				print "Generate EPG"
-				return
 
-			if self.thisAction == "picons":
+			elif self.thisAction == "picons":
 				print "Generate Picon"	
-				return
 
-			self._set_headers()
-			self.wfile.write("Invalid Request")
+			elif self.thisAction == "info":
+				self._set_headers()
+				self.wfile.write(od.getModuleInfo(self.thisModule))
+
+			else:
+				self._set_headers()
+				self.wfile.write("Invalid Request")
 
 
 
    		def do_HEAD(self):
         		self._set_headers()
+
+		def getParamsAsDict(self,url):
+			if "?" in url:
+ 				qs = url.split("?")[1]
+				final_dict = dict()
+ 		   		for item in qs.split("&"):
+        				final_dict[item.split("=")[0]] = item.split("=")[1]
+    				return final_dict
+			else:
+				return None
+
+
+
+
+
 
 	class bouquet():
 		
@@ -258,7 +345,7 @@ class onDemand():
 			self.od = od
 	
 		##Generates Bouquet for the given moduel and returns
-		def generateBouquet(self,module):
+		def generateBouquet(self,module,filter):
 
 			import os
 
@@ -269,26 +356,43 @@ class onDemand():
 			if not os.path.isfile(moduleBouquet):
 	
 				line = ""
-				line = line + "#NAME " + module + "\n"
+				line = line + "#NAME " + od.getModuleTitle(module) + "\n"
 				db = od.dbWriter(od)
 				rows = db.getListings(module)
+	
 				for row in rows:
-					line = line + self.bouquetLine(row['title'],row['url']) + "\n"
+						if row['title'] is not None and row['channel'] is not None and row['url'] is not None:
+							line = line + self.bouquetLine(row['title'].strip() + " [" + row['channel'].strip() +  "]",row['url']) + "\n"
 				
 				thisBouquet = open(moduleBouquet, 'w')
 				thisBouquet.write(line)
 				thisBouquet.close()
 
+			returnln = ""
+
 			with open(moduleBouquet) as thisBouquet:
-				thisBouquetContent = thisBouquet.read()
-                        	return thisBouquetContent
+				thisBouquetContent = thisBouquet.readlines()
+                        	for bouquetLine in thisBouquetContent:
+					
+					try:
+						exclude=filter['exclude']
 
+						if not any(line in bouquetLine.lower() for line in filter['exclude'].lower().split(",")):
 
+							returnln = returnln + bouquetLine
 
+					except:
+
+							returnln = returnln + bouquetLine 
+
+				return returnln
 
 		##Generates an Enigma2 Bouquet Line
 		def bouquetLine(self,title,url):
-			return "#SERVICE 4097:0:1:1:0:0:0:0:0:3:"+urllib.quote(url)+":"+title.replace("  ","")
+			if url is not None and title is not None:
+				return "#SERVICE 4097:0:1:1:0:0:0:0:0:3:"+urllib.quote(url)+":"+title.replace("  ","")
+			else:
+				print "none"
 
 ##########################################################################################
 
