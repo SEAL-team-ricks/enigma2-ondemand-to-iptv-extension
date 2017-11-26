@@ -16,19 +16,14 @@ class odmodule():
 		##What is this Module Called? must also be the file name minus PY####
 		#####################################################################
 
-                self.moduleName = "iplayer"
-		self.moduleTitle = "BBC iPlayer"
+                self.moduleName = "itv-hub"
+		self.moduleTitle = "ITV Hub"
 		self.moduleAuthor = "Louis Varley"
-		self.moduleVersion = "2.1"
+		self.moduleVersion = "1.1"
 		self.moduleFilters = [
-			{'title':'Exclude CBBC','keyword':'cbbc'},
-			{'title':'Exclude cBeebies','keyword':'cbeebies'},
-                	{'title':'BBC Alba (Gaelic)','keyword':'alba'},
-                	{'title':'BBC S4C (Welsh)','keyword':'s4c'},
-                	{'title':'BBC Parliament','keyword':'parliament'},
-                        {'title':'Football Related','keyword':'football'},
+			{'title':'Exclude CITV','keyword':'citv'},
                         {'title':'Weather','keyword':'weather'},
-                        {'title':'BBC News','keyword':'news'}
+                        {'title':'News','keyword':'news'}
 		]
 
 		###Carry These from the Main OD Classes to use
@@ -37,7 +32,6 @@ class odmodule():
 		self.dbWriter = self.od.dbWriter(od)
 		self.rawLocation = self.settings.tmpPath+self.moduleName+".raw"
 		self.bouquetLocation = self.settings.tmpPath+self.moduleName+".tv"
-		self.indexLocation= self.settings.indexPath+self.moduleName+".index"
 
 	##This will be called when the OD service is run calling for a list of filters to be available, in any plugins eventually.
 	##It should return a json string listing what keywords this plugin can filter 
@@ -67,7 +61,6 @@ class odmodule():
 
 		import os
 		import urllib
-		import mmap
 
 		print "Running " + self.moduleTitle + " module - " + self.moduleAuthor + " v" + self.moduleVersion
 
@@ -92,7 +85,7 @@ class odmodule():
                                 if line[0].isdigit():
 
                                         print "##############################################"
-                                        print "####        " + str(linecount-lineCur) + " LINES TO PROCESS"
+                                        print "####        " + str(linecount-lineCur) + " LINES TO PROCESS, CURRENTLY ON " + str(lineCur)
                                         print "##############################################"
                                         print "\r"
 
@@ -102,28 +95,15 @@ class odmodule():
                                         channel=line.split(",")[1].lstrip()
                                         pid=line.split(",")[2].strip()
 
+					thisShow = None
 					thisShow = self.od.show(self.od)
-
-					if pid in open(self.indexLocation).read():
-						newShow = False
-
-					else:
-						newShow = True
-
-					#Just exclude these, they are a PITA
-
-					if "s4c" in channel.lower() or "parliament" in channel.lower():
-						newShow=False 
-
-					if "news" in channel.lower() or "live" in title.lower() or "alba" in channel.lower(): 
-						newShow=False
-
-					if "news" in title.lower() or "alba" in title.lower() or "sport" in title.lower() or "football" in title.lower():
-						newshow=False					
-
-					if(newShow == True):
+					
+					##Check if this show is indexed
+					thisShow.load(pid,self.moduleName)
+					
+					if(thisShow.id is None):
 					##This is a new show so add the ID and title
-						print "Adding Show " + pid + " [" + title + "]"
+						print "Adding new Show [" + title + "..."
                                                 thisShow.id = pid
                                                 thisShow.title = title
 						thisShow.channel = channel
@@ -139,25 +119,22 @@ class odmodule():
 						thisShow.url = stream['url']
 						thisShow.expires = stream['expires']
 
-	
+
 					if thisShow.description is None and newShow == True:
 						print "Updating Thumbnail..."
 						meta = self.fetchMeta(pid)
 						thisShow.thumbnail = meta['thumbnail']
 						thisShow.description = meta['description']
 
-					if newShow == True:
-						thisShow.module = self.moduleName
-						thisShow.updateCreate()
+					thisShow.module = self.moduleName
+
+					thisShow.updateCreate()
 
 
 			##############################################################################
 			##Call this finally, otherwise the main class will never regenerate a bouquet#
                         ##############################################################################
-			if os.path.isfile(self.bouquetLocation): 
-				os.remove(self.bouquetLocation)
-
-			print "Finished..."
+			os.remove(self.bouquetLocation)
 
 
 	##Extracts the Streaming URL's using the PID from get iplayer and finds the one which is an MP4 with the highiest priority

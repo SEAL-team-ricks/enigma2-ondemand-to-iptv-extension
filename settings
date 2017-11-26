@@ -9,6 +9,7 @@ httpdport: 80
 odPath: /opt/ondemand/
 tmpPath: /opt/ondemand/tmp/
 logFile: /opt/ondemand/log
+indexPath: /opt/ondemand/db/
 dbFile: /opt/ondemand/db/db.json
 blackListFile: /opt/ondemand/blacklist
-cronUniqueKey: uniquenumberforcronhere
+cronUniqueKey: uniqueID
